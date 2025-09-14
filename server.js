@@ -1,6 +1,30 @@
 // server.js
+const http = require("http");
 const WebSocket = require("ws");
-const wss = new WebSocket.Server({ port: process.env.PORT || 8080 });
+
+const server = http.createServer((req, res) => {
+  res.writeHead(200);
+  res.end("Servidor activo");
+});
+
+const wss = new WebSocket.Server({ noServer: true });
+
+wss.on("connection", ws => {
+  console.log("Cliente conectado");
+  ws.on("message", msg => {
+    ws.send(msg); // eco para prueba
+  });
+});
+
+server.on("upgrade", (request, socket, head) => {
+  wss.handleUpgrade(request, socket, head, ws => {
+    wss.emit("connection", ws, request);
+  });
+});
+
+server.listen(process.env.PORT || 8080, () => {
+  console.log("Servidor corriendo en puerto", process.env.PORT || 8080);
+});
 
 let clients = [];
 
