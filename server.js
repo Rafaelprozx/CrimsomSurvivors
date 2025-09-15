@@ -9,7 +9,8 @@ const server = http.createServer((req, res) => {
 const wss = new WebSocket.Server({ noServer: true });
 
 // Lista de hosts activos
-let hosts = []; // [{ id, name, players, max_players, ws }]
+// Cada host guarda: { id, name, players: [ {id, name, is_host, character_index, ws} ], max_players, ws }
+let hosts = [];
 
 function broadcastHosts() {
   const data = JSON.stringify({
@@ -17,15 +18,33 @@ function broadcastHosts() {
     list: hosts.map(h => ({
       id: h.id,
       name: h.name,
-      players: h.players,
+      players: h.players.length,
       max_players: h.max_players
     }))
   });
 
-  // Enviar la lista a todos los clientes
   wss.clients.forEach(client => {
     if (client.readyState === WebSocket.OPEN) {
       client.send(data);
+    }
+  });
+}
+
+function broadcastPlayers(host) {
+  const data = JSON.stringify({
+    type: "update_players",
+    host_id: host.id,
+    players: host.players.map(p => ({
+      id: p.id,
+      name: p.name,
+      is_host: p.is_host,
+      character_index: p.character_index
+    }))
+  });
+
+  host.players.forEach(p => {
+    if (p.ws && p.ws.readyState === WebSocket.OPEN) {
+      p.ws.send(data);
     }
   });
 }
@@ -44,38 +63,69 @@ wss.on("connection", (ws) => {
 
     switch (data.type) {
       case "new_host":
-        // Registrar un nuevo host
         hosts.push({
           id: data.id,
           name: data.name || "Partida",
-          players: 1,
+          players: [
+            { 
+              id: data.host_id, 
+              name: data.host_name || "Host", 
+              is_host: true, 
+              character_index: -1, // no seleccionado aún
+              ws: ws 
+            }
+          ],
           max_players: data.max_players || 5,
           ws: ws
         });
         console.log("Nuevo host:", data.name);
         broadcastHosts();
+        broadcastPlayers(hosts[hosts.length - 1]);
         break;
 
       case "get_hosts":
-        // Responder solo al cliente que lo pidió
         ws.send(JSON.stringify({
           type: "hosts",
           list: hosts.map(h => ({
             id: h.id,
             name: h.name,
-            players: h.players,
+            players: h.players.length,
             max_players: h.max_players
           }))
         }));
         break;
 
       case "join_host":
-        // Buscar el host por ID
-        let host = hosts.find(h => h.id === data.host_id);
-        if (host) {
-          host.players = Math.min(host.players + 1, host.max_players);
-          console.log(`Jugador se unió a ${host.name} (${host.players}/${host.max_players})`);
-          broadcastHosts();
+        {
+          let host = hosts.find(h => h.id === data.host_id);
+          if (host) {
+            if (host.players.length < host.max_players) {
+              host.players.push({
+                id: data.player_id,
+                name: data.name || "Jugador",
+                is_host: false,
+                character_index: -1,
+                ws: ws
+              });
+              console.log(`Jugador ${data.name} se unió a ${host.name} (${host.players.length}/${host.max_players})`);
+              broadcastHosts();
+              broadcastPlayers(host);
+            }
+          }
+        }
+        break;
+
+      case "select_character":
+        {
+          let host = hosts.find(h => h.id === data.host_id);
+          if (host) {
+            let player = host.players.find(p => p.id === data.player_id);
+            if (player) {
+              player.character_index = data.character_index;
+              console.log(`${player.name} seleccionó personaje ${data.character_index}`);
+              broadcastPlayers(host);
+            }
+          }
         }
         break;
 
@@ -87,8 +137,17 @@ wss.on("connection", (ws) => {
   ws.on("close", () => {
     console.log("Cliente desconectado");
 
-    // Limpiar hosts que pertenecían a este cliente
-    hosts = hosts.filter(h => h.ws !== ws);
+    // Quitar al jugador desconectado de cualquier host
+    hosts.forEach(host => {
+      host.players = host.players.filter(p => p.ws !== ws);
+    });
+
+    // Quitar hosts cuyo host principal se desconectó
+    hosts = hosts.filter(h => {
+      const host_player = h.players.find(p => p.is_host);
+      return host_player && host_player.ws.readyState === WebSocket.OPEN;
+    });
+
     broadcastHosts();
   });
 });
