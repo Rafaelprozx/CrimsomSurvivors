@@ -94,6 +94,21 @@ wss.on("connection", (ws) => {
           }))
         }));
         break;
+		case "get_players":
+		let host = hosts.find(h => h.id === data.host_id);
+		if (host) {
+			ws.send(JSON.stringify({
+			 type: "update_players",
+			 host_id: host.id,
+			 players: host.players.map(p => ({
+			id: p.id,
+			name: p.name,
+			is_host: p.is_host,
+			character_index: p.character_index
+      }))
+    }));
+  }
+  break;
 
       case "join_host":
         {
