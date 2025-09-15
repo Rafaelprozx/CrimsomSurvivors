@@ -133,10 +133,9 @@ wss.on("connection", (ws) => {
       case "select_character":
         {
           let host = hosts.find(h => h.id === data.host_id);
-		  console.log(`${data}`)
           if (host) {
             let player = host.players.find(p => p.id === data.player_id);
-			console.log(`player id = ${p.id} data del player = ${player.id}`)
+			console.log("Buscando player:", data.player_id, "en host.players:", host.players.map(p => p.id))
             if (player) {
               player.character_index = data.character_index;
               console.log(`${player.name} seleccionó personaje ${data.character_index}`);
